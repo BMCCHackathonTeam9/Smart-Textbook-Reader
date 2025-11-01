@@ -1,11 +1,10 @@
 import { createWorker } from 'tesseract.js';
 import * as pdfjsLib from 'pdfjs-dist';
-import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs';
 
-// Set worker properly for production
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+// Configure PDF.js worker using URL string (compatible with Create React App)
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
-console.log('PDF.js worker configured');
+console.log('PDF.js worker configured:', pdfjsLib.GlobalWorkerOptions.workerSrc);
 
 class OCRService {
   constructor() {
