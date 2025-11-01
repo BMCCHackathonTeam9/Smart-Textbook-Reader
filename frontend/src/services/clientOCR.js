@@ -1,8 +1,23 @@
 import { createWorker } from 'tesseract.js';
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Configure PDF.js worker with reliable CDN
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
+// Try multiple CDN fallbacks for PDF.js worker
+const workerSources = [
+  `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`,
+  `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`,
+  `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+];
+
+// Try to set worker with fallbacks
+for (const workerSrc of workerSources) {
+  try {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
+    console.log('PDF.js worker set to:', workerSrc);
+    break;
+  } catch (error) {
+    console.warn('Failed to set worker source:', workerSrc, error);
+  }
+}
 
 class OCRService {
   constructor() {
@@ -46,7 +61,7 @@ class OCRService {
 
   async extractTextFromPDF(pdfFile, onProgress) {
     try {
-      // Convert PDF to images first
+      // First try the normal PDF processing
       const images = await this.pdfToImages(pdfFile, onProgress);
       let fullText = '';
       
@@ -79,9 +94,16 @@ class OCRService {
       }
 
       return fullText.trim();
+      
     } catch (error) {
       console.error('PDF OCR Error:', error);
-      throw new Error('Failed to extract text from PDF: ' + error.message);
+      
+      // If PDF processing fails completely, provide helpful error message
+      if (error.message.includes('worker failed') || error.message.includes('Failed to fetch')) {
+        throw new Error('PDF processing failed due to browser compatibility issues. Please try uploading the PDF as individual page images (screenshots) instead, or use a different browser.');
+      } else {
+        throw new Error('Failed to extract text from PDF: ' + error.message);
+      }
     }
   }
 
@@ -99,26 +121,60 @@ class OCRService {
       console.log('Converting PDF to images...');
       const arrayBuffer = await pdfFile.arrayBuffer();
       
-      // Add timeout protection for PDF loading
-      const loadingTask = pdfjsLib.getDocument({
-        data: arrayBuffer,
-        verbosity: 0, // Reduce console noise
-        isEvalSupported: false,
-        disableFontFace: true
-      });
+      // Try different PDF.js configurations if worker fails
+      let pdf;
+      try {
+        // First attempt with worker
+        const loadingTask = pdfjsLib.getDocument({
+          data: arrayBuffer,
+          verbosity: 0,
+          isEvalSupported: false,
+          disableFontFace: true,
+          useWorkerFetch: false,
+          disableAutoFetch: true,
+          disableStream: true
+        });
 
-      // Set up timeout to prevent hanging
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('PDF loading timeout after 30 seconds')), 30000)
-      );
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('PDF loading timeout after 15 seconds')), 15000)
+        );
 
-      const pdf = await Promise.race([loadingTask.promise, timeoutPromise]);
+        pdf = await Promise.race([loadingTask.promise, timeoutPromise]);
+        
+      } catch (workerError) {
+        console.warn('PDF.js worker failed, trying fallback method:', workerError);
+        
+        // Fallback: try without worker
+        try {
+          // Disable worker entirely for fallback
+          const originalWorkerSrc = pdfjsLib.GlobalWorkerOptions.workerSrc;
+          pdfjsLib.GlobalWorkerOptions.workerSrc = undefined;
+          
+          const fallbackTask = pdfjsLib.getDocument({
+            data: arrayBuffer,
+            verbosity: 0,
+            useWorkerFetch: false,
+            disableAutoFetch: true,
+            disableStream: true,
+            disableRange: true
+          });
+          
+          pdf = await fallbackTask.promise;
+          
+          // Restore worker setting for future use
+          pdfjsLib.GlobalWorkerOptions.workerSrc = originalWorkerSrc;
+          
+        } catch (fallbackError) {
+          console.error('Both PDF.js methods failed:', fallbackError);
+          throw new Error('Cannot process this PDF file. It may be corrupted or use unsupported features.');
+        }
+      }
+
       const images = [];
-
       console.log(`PDF has ${pdf.numPages} pages`);
       
-      // Limit to first 5 pages to prevent timeout
-      const maxPages = Math.min(pdf.numPages, 5);
+      // Limit to first 3 pages to prevent timeout and memory issues
+      const maxPages = Math.min(pdf.numPages, 3);
 
       for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
         if (onProgress) {
@@ -133,7 +189,7 @@ class OCRService {
         try {
           console.log(`Processing page ${pageNum}/${maxPages}...`);
           const page = await pdf.getPage(pageNum);
-          const viewport = page.getViewport({ scale: 2 });
+          const viewport = page.getViewport({ scale: 1.5 }); // Reduced scale to prevent memory issues
           
           const canvas = document.createElement('canvas');
           const context = canvas.getContext('2d');
@@ -147,14 +203,14 @@ class OCRService {
           }).promise;
 
           const pageTimeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error(`Page ${pageNum} rendering timeout`)), 15000)
+            setTimeout(() => reject(new Error(`Page ${pageNum} rendering timeout`)), 10000)
           );
 
           await Promise.race([renderPromise, pageTimeoutPromise]);
 
-          // Convert canvas to blob
+          // Convert canvas to blob with lower quality to reduce size
           const blob = await new Promise(resolve => {
-            canvas.toBlob(resolve, 'image/png', 0.8);
+            canvas.toBlob(resolve, 'image/jpeg', 0.7);
           });
 
           images.push(blob);
@@ -168,11 +224,12 @@ class OCRService {
       }
 
       if (images.length === 0) {
-        throw new Error('No pages could be converted to images');
+        throw new Error('No pages could be converted to images. The PDF may be corrupted or use unsupported features.');
       }
 
       console.log(`Converted ${images.length} pages to images`);
       return images;
+      
     } catch (error) {
       console.error('PDF to images conversion error:', error);
       throw new Error('Failed to convert PDF to images: ' + error.message);
