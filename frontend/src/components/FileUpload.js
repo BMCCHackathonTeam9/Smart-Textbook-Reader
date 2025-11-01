@@ -128,6 +128,10 @@ const FileUpload = ({ onFileUpload, isProcessing, uploadProgress, ocrProgress })
             <Text size="sm" color="gray" style={{ marginTop: '0.5rem' }}>
               Supports PDF files and images (PNG, JPG, etc.) up to 50MB
             </Text>
+            
+            <Text size="xs" color="gray" style={{ marginTop: '0.5rem', fontStyle: 'italic' }}>
+              💡 Tip: If your PDF fails to process, try taking screenshots of each page and uploading them as images instead
+            </Text>
           </>
         )}
       </DropzoneWrapper>

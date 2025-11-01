@@ -86,21 +86,65 @@ function App() {
       }
     } catch (error) {
       console.error('File processing error:', error);
-      setError(error.message);
+      let errorMessage = error.message;
+      let showPdfHint = false;
       
-      // For demo purposes, show sample data if OCR fails
-      const sampleText = `Sample Text (OCR Failed)
+      // Check if it's a PDF processing error
+      if (file.type === 'application/pdf') {
+        showPdfHint = true;
+        if (error.message.includes('corrupted') || error.message.includes('unsupported features')) {
+          errorMessage = `This PDF couldn't be processed directly. This can happen with:
+• Password-protected PDFs
+• Scanned PDFs without text layer
+• Complex layouts or special formatting
+• Older PDF versions
 
-Photosynthesis is the process by which plants use sunlight, water, and carbon dioxide to create oxygen and energy in the form of sugar. This process is essential for life on Earth.
+💡 Try these alternatives:
+1. Take screenshots of each page and upload them as images
+2. Use a different PDF viewer to export/print as images
+3. Try a simpler PDF if available`;
+        }
+      }
+      
+      setError(errorMessage);
+      
+      // For demo purposes, show comprehensive sample data if OCR fails
+      const sampleText = `Smart Textbook Reader - Sample Content
+${showPdfHint ? '(Original PDF processing failed - showing sample textbook content)' : '(OCR processing failed - showing sample content)'}
 
-During photosynthesis, plants absorb light energy through chlorophyll in their leaves. This energy is used to convert carbon dioxide from the air and water from the soil into glucose and oxygen.
+Chapter 1: Introduction to Photosynthesis
 
-The chemical equation for photosynthesis is:
+Photosynthesis is the biological process by which plants, algae, and certain bacteria convert light energy, usually from the sun, into chemical energy stored in glucose molecules. This process is fundamental to life on Earth as it provides energy for most living organisms and produces oxygen as a byproduct.
+
+Key Components of Photosynthesis:
+
+1. Chlorophyll: The green pigment in plants that captures light energy
+2. Carbon Dioxide (CO₂): Absorbed from the atmosphere through stomata
+3. Water (H₂O): Absorbed through the plant's root system
+4. Sunlight: The energy source that drives the reaction
+
+The Chemical Equation:
 6CO₂ + 6H₂O + light energy → C₆H₁₂O₆ + 6O₂
 
-This process not only provides energy for the plant but also produces oxygen as a byproduct, which is released into the atmosphere.
+This equation shows that six molecules of carbon dioxide plus six molecules of water, in the presence of light energy, produce one molecule of glucose and six molecules of oxygen.
 
-Note: This is sample text shown because OCR processing failed. Error: ${error.message}`;
+Types of Photosynthesis:
+
+• Light-dependent reactions (Photo reactions): Occur in the thylakoids
+• Light-independent reactions (Calvin Cycle): Occur in the stroma
+
+Environmental Factors Affecting Photosynthesis:
+- Light intensity and quality
+- Temperature
+- Carbon dioxide concentration  
+- Water availability
+
+Applications:
+Understanding photosynthesis is crucial for agriculture, environmental science, and renewable energy research. Scientists study this process to improve crop yields and develop artificial photosynthesis systems.
+
+${showPdfHint ? '\n⚠️ Note: To process your actual PDF, please try the suggested alternatives above.' : ''}
+
+Error details: ${error.message}`;
       
       setExtractedText(sampleText);
     } finally {
