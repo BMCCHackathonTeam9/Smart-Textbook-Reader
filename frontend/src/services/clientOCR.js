@@ -1,23 +1,21 @@
 import { createWorker } from 'tesseract.js';
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Try multiple CDN fallbacks for PDF.js worker
-const workerSources = [
-  `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`,
-  `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`,
-  `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
-];
+// Configure PDF.js worker for Create React App and Vercel
+// Use a simpler, more reliable approach
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
-// Try to set worker with fallbacks
-for (const workerSrc of workerSources) {
-  try {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
-    console.log('PDF.js worker set to:', workerSrc);
-    break;
-  } catch (error) {
-    console.warn('Failed to set worker source:', workerSrc, error);
-  }
+// Alternative: try to use local worker if available
+try {
+  // This might work in development
+  const workerPath = `/static/js/pdf.worker.min.js`;
+  pdfjsLib.GlobalWorkerOptions.workerSrc = workerPath;
+} catch (e) {
+  // Fall back to CDN
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 }
+
+console.log('PDF.js worker configured:', pdfjsLib.GlobalWorkerOptions.workerSrc);
 
 class OCRService {
   constructor() {
@@ -121,60 +119,34 @@ class OCRService {
       console.log('Converting PDF to images...');
       const arrayBuffer = await pdfFile.arrayBuffer();
       
-      // Try different PDF.js configurations if worker fails
-      let pdf;
-      try {
-        // First attempt with worker
-        const loadingTask = pdfjsLib.getDocument({
-          data: arrayBuffer,
-          verbosity: 0,
-          isEvalSupported: false,
-          disableFontFace: true,
-          useWorkerFetch: false,
-          disableAutoFetch: true,
-          disableStream: true
-        });
+      // Simplified PDF.js configuration that's more likely to work
+      const loadingTask = pdfjsLib.getDocument({
+        data: arrayBuffer,
+        verbosity: 0,
+        // Disable problematic features
+        isEvalSupported: false,
+        disableFontFace: true,
+        useWorkerFetch: false,
+        disableAutoFetch: true,
+        disableStream: true,
+        disableRange: true,
+        // Add these for better compatibility
+        standardFontDataUrl: null,
+        cMapPacked: true
+      });
 
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('PDF loading timeout after 15 seconds')), 15000)
-        );
+      // Shorter timeout to fail faster
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('PDF loading timeout - try converting to images first')), 10000)
+      );
 
-        pdf = await Promise.race([loadingTask.promise, timeoutPromise]);
-        
-      } catch (workerError) {
-        console.warn('PDF.js worker failed, trying fallback method:', workerError);
-        
-        // Fallback: try without worker
-        try {
-          // Disable worker entirely for fallback
-          const originalWorkerSrc = pdfjsLib.GlobalWorkerOptions.workerSrc;
-          pdfjsLib.GlobalWorkerOptions.workerSrc = undefined;
-          
-          const fallbackTask = pdfjsLib.getDocument({
-            data: arrayBuffer,
-            verbosity: 0,
-            useWorkerFetch: false,
-            disableAutoFetch: true,
-            disableStream: true,
-            disableRange: true
-          });
-          
-          pdf = await fallbackTask.promise;
-          
-          // Restore worker setting for future use
-          pdfjsLib.GlobalWorkerOptions.workerSrc = originalWorkerSrc;
-          
-        } catch (fallbackError) {
-          console.error('Both PDF.js methods failed:', fallbackError);
-          throw new Error('Cannot process this PDF file. It may be corrupted or use unsupported features.');
-        }
-      }
-
+      const pdf = await Promise.race([loadingTask.promise, timeoutPromise]);
       const images = [];
+
       console.log(`PDF has ${pdf.numPages} pages`);
       
-      // Limit to first 3 pages to prevent timeout and memory issues
-      const maxPages = Math.min(pdf.numPages, 3);
+      // Limit to first 2 pages to minimize issues
+      const maxPages = Math.min(pdf.numPages, 2);
 
       for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
         if (onProgress) {
@@ -189,50 +161,62 @@ class OCRService {
         try {
           console.log(`Processing page ${pageNum}/${maxPages}...`);
           const page = await pdf.getPage(pageNum);
-          const viewport = page.getViewport({ scale: 1.5 }); // Reduced scale to prevent memory issues
+          
+          // Use smaller scale to reduce memory usage and processing time
+          const viewport = page.getViewport({ scale: 1.0 });
           
           const canvas = document.createElement('canvas');
           const context = canvas.getContext('2d');
           canvas.height = viewport.height;
           canvas.width = viewport.width;
 
-          // Add timeout for page rendering
+          // Shorter timeout for page rendering
           const renderPromise = page.render({
             canvasContext: context,
             viewport: viewport
           }).promise;
 
           const pageTimeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error(`Page ${pageNum} rendering timeout`)), 10000)
+            setTimeout(() => reject(new Error(`Page ${pageNum} timeout`)), 5000)
           );
 
           await Promise.race([renderPromise, pageTimeoutPromise]);
 
-          // Convert canvas to blob with lower quality to reduce size
+          // Convert to JPEG with lower quality for faster processing
           const blob = await new Promise(resolve => {
-            canvas.toBlob(resolve, 'image/jpeg', 0.7);
+            canvas.toBlob(resolve, 'image/jpeg', 0.6);
           });
 
-          images.push(blob);
-          console.log(`Page ${pageNum} converted successfully`);
+          if (blob) {
+            images.push(blob);
+            console.log(`Page ${pageNum} converted successfully`);
+          }
           
         } catch (error) {
           console.error(`Error converting page ${pageNum}:`, error);
-          // Skip failed pages instead of creating placeholder
+          // Skip failed pages
           continue;
         }
       }
 
       if (images.length === 0) {
-        throw new Error('No pages could be converted to images. The PDF may be corrupted or use unsupported features.');
+        throw new Error('No pages could be converted. Try uploading page screenshots as images instead.');
       }
 
-      console.log(`Converted ${images.length} pages to images`);
+      console.log(`Successfully converted ${images.length} pages to images`);
       return images;
       
     } catch (error) {
       console.error('PDF to images conversion error:', error);
-      throw new Error('Failed to convert PDF to images: ' + error.message);
+      
+      // Provide more specific error messages
+      if (error.message.includes('timeout')) {
+        throw new Error('PDF processing timed out. Please try uploading individual page screenshots as images instead.');
+      } else if (error.message.includes('worker')) {
+        throw new Error('PDF worker failed to load. Please try uploading page screenshots as images instead.');
+      } else {
+        throw new Error('PDF processing failed. Please try uploading page screenshots as images instead.');
+      }
     }
   }
 
