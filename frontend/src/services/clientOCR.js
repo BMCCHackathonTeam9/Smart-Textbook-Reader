@@ -1,21 +1,26 @@
 import { createWorker } from 'tesseract.js';
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Configure PDF.js worker for Create React App and Vercel
-// Use a simpler, more reliable approach
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+// Configure PDF.js worker with multiple fallbacks
+const configureWorker = () => {
+  const workerSources = [
+    // Try local worker first (for better reliability)
+    `${window.location.origin}/static/js/pdf.worker.min.mjs`,
+    // Fallback to CDNs
+    `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`,
+    `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`,
+    `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`
+  ];
 
-// Alternative: try to use local worker if available
-try {
-  // This might work in development
-  const workerPath = `/static/js/pdf.worker.min.js`;
-  pdfjsLib.GlobalWorkerOptions.workerSrc = workerPath;
-} catch (e) {
-  // Fall back to CDN
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+  // Set the first available worker source
+  pdfjsLib.GlobalWorkerOptions.workerSrc = workerSources[0];
+  console.log('PDF.js worker configured:', pdfjsLib.GlobalWorkerOptions.workerSrc);
+};
+
+// Configure worker when module loads
+if (typeof window !== 'undefined') {
+  configureWorker();
 }
-
-console.log('PDF.js worker configured:', pdfjsLib.GlobalWorkerOptions.workerSrc);
 
 class OCRService {
   constructor() {
