@@ -1,26 +1,11 @@
 import { createWorker } from 'tesseract.js';
+import * as pdfjsLib from 'pdfjs-dist';
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs';
 
-// Use dynamic import for PDF.js to avoid worker issues
-let pdfjsLib = null;
+// Set worker properly for production
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
-const initializePDFJS = async () => {
-  if (!pdfjsLib) {
-    try {
-      // Dynamic import to avoid initial loading issues
-      pdfjsLib = await import('pdfjs-dist');
-      
-      // Don't use a worker at all - use the main thread
-      pdfjsLib.GlobalWorkerOptions.workerSrc = false;
-      
-      console.log('PDF.js initialized without worker');
-      return true;
-    } catch (error) {
-      console.error('Failed to initialize PDF.js:', error);
-      return false;
-    }
-  }
-  return true;
-};
+console.log('PDF.js worker configured');
 
 class OCRService {
   constructor() {
@@ -112,12 +97,6 @@ class OCRService {
 
   async pdfToImages(pdfFile, onProgress) {
     try {
-      // Initialize PDF.js
-      const pdfjsInitialized = await initializePDFJS();
-      if (!pdfjsInitialized) {
-        throw new Error('PDF.js failed to initialize');
-      }
-
       if (onProgress) {
         onProgress({
           stage: 'converting',
@@ -130,10 +109,9 @@ class OCRService {
       console.log('Converting PDF to images...');
       const arrayBuffer = await pdfFile.arrayBuffer();
       
-      // Simple PDF.js configuration without worker complications
+      // Simple PDF.js configuration
       const pdf = await pdfjsLib.getDocument({
-        data: arrayBuffer,
-        verbosity: 0
+        data: arrayBuffer
       }).promise;
 
       const images = [];
@@ -164,7 +142,7 @@ class OCRService {
           canvas.height = viewport.height;
           canvas.width = viewport.width;
 
-          // Render page without timeout complications
+          // Render page
           await page.render({
             canvasContext: context,
             viewport: viewport
