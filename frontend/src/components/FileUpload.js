@@ -90,7 +90,7 @@ const FileUpload = ({ onFileUpload, isProcessing, uploadProgress, ocrProgress })
   return (
     <Card>
       <Text size="xl" weight="semibold" align="center">
-        Upload Your Textbook
+        Take a photo or upload a PDF/image file 
       </Text>
       
       <DropzoneWrapper {...getRootProps()} isDragActive={isDragActive}>

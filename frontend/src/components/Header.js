@@ -19,10 +19,10 @@ const Header = () => {
     <HeaderWrapper>
       <Container>
         <Heading level={1} color="white" align="center" noMargin>
-          📚 Smart Textbook Reader
+          📚 Vision+ 
         </Heading>
         <Subtitle size="xl" color="white" align="center" noMargin>
-          Upload your textbook and let AI read it to you
+          Upload textbooks, signs, or other text and let AI read it to you
         </Subtitle>
       </Container>
     </HeaderWrapper>
