@@ -89,98 +89,39 @@ const VolumeSlider = styled.input`
   }
 `;
 
-const AudioControls = ({ audioUrl, isGenerating, onGenerateAudio, extractedText }) => {
-  const audioRef = useRef(null);
+const AudioControls = ({ extractedText, onPlayAudio, onPauseAudio, onResumeAudio, onStopAudio, ttsService }) => {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [duration, setDuration] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [volume, setVolume] = useState(1);
-  const [isHoveringProgress, setIsHoveringProgress] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
 
   useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    const setAudioData = () => {
-      setDuration(audio.duration);
-      setCurrentTime(audio.currentTime);
+    const checkSpeechStatus = () => {
+      if (ttsService) {
+        setIsPlaying(ttsService.isPlaying && !ttsService.isPaused);
+        setIsPaused(ttsService.isPaused);
+      }
     };
 
-    const setAudioTime = () => setCurrentTime(audio.currentTime);
+    const interval = setInterval(checkSpeechStatus, 100);
+    return () => clearInterval(interval);
+  }, [ttsService]);
 
-    audio.addEventListener('loadeddata', setAudioData);
-    audio.addEventListener('timeupdate', setAudioTime);
-    audio.addEventListener('ended', () => setIsPlaying(false));
-
-    return () => {
-      audio.removeEventListener('loadeddata', setAudioData);
-      audio.removeEventListener('timeupdate', setAudioTime);
-      audio.removeEventListener('ended', () => setIsPlaying(false));
-    };
-  }, [audioUrl]);
-
-  const togglePlayPause = () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    if (isPlaying) {
-      audio.pause();
+  const handlePlay = async () => {
+    if (isPaused) {
+      onResumeAudio();
     } else {
-      audio.play();
-    }
-    setIsPlaying(!isPlaying);
-  };
-
-  const handleProgressClick = (e) => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    const rect = e.currentTarget.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const newTime = (clickX / rect.width) * duration;
-    audio.currentTime = newTime;
-    setCurrentTime(newTime);
-  };
-
-  const handleVolumeChange = (e) => {
-    const newVolume = parseFloat(e.target.value);
-    setVolume(newVolume);
-    if (audioRef.current) {
-      audioRef.current.volume = newVolume;
+      await onPlayAudio();
     }
   };
 
-  const skipForward = () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.currentTime = Math.min(audio.currentTime + 10, duration);
+  const handlePause = () => {
+    onPauseAudio();
   };
 
-  const skipBackward = () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.currentTime = Math.max(audio.currentTime - 10, 0);
+  const handleStop = () => {
+    onStopAudio();
+    setIsPlaying(false);
+    setIsPaused(false);
   };
-
-  const downloadAudio = () => {
-    if (!audioUrl) return;
-    
-    const link = document.createElement('a');
-    link.href = audioUrl;
-    link.download = 'textbook-audio.mp3';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const formatTime = (time) => {
-    if (isNaN(time)) return '0:00';
-    const minutes = Math.floor(time / 60);
-    const seconds = Math.floor(time % 60);
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  };
-
-  const progressPercentage = duration ? (currentTime / duration) * 100 : 0;
 
   return (
     <Card>
@@ -188,114 +129,56 @@ const AudioControls = ({ audioUrl, isGenerating, onGenerateAudio, extractedText 
         <Text size="xl" weight="semibold" noMargin>
           🔊 Audio Playback
         </Text>
-        
-        {!audioUrl && !isGenerating && extractedText && (
-          <Button onClick={onGenerateAudio} size="small">
-            Generate Audio
-          </Button>
-        )}
       </Flex>
 
-      {isGenerating && (
-        <Flex direction="column" align="center" gap="1rem" style={{ margin: '2rem 0' }}>
-          <LoadingSpinner size="32px" />
-          <Text weight="medium" align="center">
-            Generating audio from text...
-          </Text>
-          <Text size="sm" color="gray" align="center">
-            This may take a moment
-          </Text>
-        </Flex>
-      )}
-
-      {audioUrl && (
+      {extractedText ? (
         <AudioPlayerWrapper>
-          <audio ref={audioRef} src={audioUrl} preload="metadata" />
-          
           {/* Main Controls */}
           <Flex justify="center" align="center" gap="1rem">
             <Button
-              variant="outline"
-              size="small"
-              onClick={skipBackward}
-              disabled={!duration}
-              aria-label="Skip backward 10 seconds"
-            >
-              <FiSkipBack size={18} />
-            </Button>
-            
-            <Button
-              onClick={togglePlayPause}
-              disabled={!duration}
-              aria-label={isPlaying ? 'Pause' : 'Play'}
+              onClick={handlePlay}
+              disabled={!extractedText}
+              aria-label={isPaused ? 'Resume' : isPlaying ? 'Playing...' : 'Play'}
             >
               {isPlaying ? <FiPause size={20} /> : <FiPlay size={20} />}
-              {isPlaying ? 'Pause' : 'Play'}
+              {isPaused ? 'Resume' : isPlaying ? 'Playing...' : 'Play'}
             </Button>
             
             <Button
               variant="outline"
               size="small"
-              onClick={skipForward}
-              disabled={!duration}
-              aria-label="Skip forward 10 seconds"
+              onClick={handlePause}
+              disabled={!isPlaying || isPaused}
+              aria-label="Pause"
             >
-              <FiSkipForward size={18} />
+              <FiPause size={18} />
+              Pause
             </Button>
             
             <Button
               variant="outline"
               size="small"
-              onClick={downloadAudio}
-              aria-label="Download audio file"
+              onClick={handleStop}
+              disabled={!isPlaying && !isPaused}
+              aria-label="Stop"
             >
-              <FiDownload size={16} />
-              Download
+              <FiSkipBack size={18} />
+              Stop
             </Button>
           </Flex>
 
-          {/* Progress Bar */}
-          <ProgressContainer>
-            <ProgressBar
-              onClick={handleProgressClick}
-              onMouseEnter={() => setIsHoveringProgress(true)}
-              onMouseLeave={() => setIsHoveringProgress(false)}
-            >
-              <ProgressFill progress={progressPercentage} />
-              <ProgressThumb
-                progress={progressPercentage}
-                visible={isHoveringProgress || isPlaying}
-              />
-            </ProgressBar>
-            
-            <TimeDisplay>
-              <span>{formatTime(currentTime)}</span>
-              <span>{formatTime(duration)}</span>
-            </TimeDisplay>
-          </ProgressContainer>
-
-          {/* Volume Control */}
-          <VolumeContainer>
-            <FiVolume2 size={18} color="#667eea" />
-            <VolumeSlider
-              type="range"
-              min="0"
-              max="1"
-              step="0.1"
-              value={volume}
-              onChange={handleVolumeChange}
-              aria-label="Volume control"
-            />
-            <Text size="sm" color="gray" noMargin>
-              {Math.round(volume * 100)}%
+          <div style={{ marginTop: '1rem', textAlign: 'center' }}>
+            <Text size="sm" color="gray">
+              Using Web Speech API - No download available
             </Text>
-          </VolumeContainer>
+            <Text size="xs" color="gray" style={{ marginTop: '0.5rem' }}>
+              Speech will play through your browser's built-in text-to-speech
+            </Text>
+          </div>
         </AudioPlayerWrapper>
-      )}
-
-      {!audioUrl && !isGenerating && !extractedText && (
+      ) : (
         <div style={{ textAlign: 'center', padding: '2rem', color: '#9ca3af' }}>
-          🎵 Upload a PDF to generate audio playback
+          🎵 Upload a file to enable audio playback
         </div>
       )}
     </Card>

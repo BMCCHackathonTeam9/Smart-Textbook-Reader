@@ -7,29 +7,32 @@ import Header from './components/Header';
 import FileUpload from './components/FileUpload';
 import TextDisplay from './components/TextDisplay';
 import AudioControls from './components/AudioControls';
-import { textbookAPI } from './services/api';
+import { ocrService, ttsService } from './services/clientOCR';
 
 function App() {
   const [extractedText, setExtractedText] = useState('');
-  const [audioUrl, setAudioUrl] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState('');
+  const [ocrProgress, setOcrProgress] = useState(null);
 
-  // Check backend health on component mount
+  // Initialize OCR service on component mount
   useEffect(() => {
-    const checkBackendHealth = async () => {
+    const initializeOCR = async () => {
       try {
-        await textbookAPI.healthCheck();
-        // Backend is healthy - no action needed
+        await ocrService.initialize();
+        // OCR service initialized successfully
       } catch (error) {
-        // Backend health check failed
-        setError('Backend service is not available. Please ensure the Python server is running.');
+        setError('Failed to initialize OCR service. Please refresh the page.');
       }
     };
 
-    checkBackendHealth();
+    initializeOCR();
+
+    // Cleanup on unmount
+    return () => {
+      ocrService.cleanup();
+    };
   }, []);
 
   const handleFileUpload = async (file) => {
@@ -37,80 +40,78 @@ function App() {
     setError('');
     setUploadProgress(0);
     setExtractedText('');
-    setAudioUrl('');
+    setOcrProgress(null);
 
     try {
-      const result = await textbookAPI.processPDF(file, (progress) => {
-        setUploadProgress(progress);
-      });
-
-      if (result.success) {
-        setExtractedText(result.text);
-        if (result.audioUrl) {
-          setAudioUrl(result.audioUrl);
-        }
+      if (file.type === 'application/pdf') {
+        // Handle PDF files
+        const text = await ocrService.extractTextFromPDF(file, (progress) => {
+          setOcrProgress(progress);
+          if (progress.stage === 'ocr') {
+            setUploadProgress(progress.progress);
+          }
+        });
+        setExtractedText(text);
+      } else if (file.type.startsWith('image/')) {
+        // Handle image files
+        const text = await ocrService.extractTextFromImage(file, (progress) => {
+          setUploadProgress(progress);
+        });
+        setExtractedText(text);
       } else {
-        throw new Error(result.error || 'Failed to process PDF');
+        throw new Error('Please upload a PDF or image file');
       }
     } catch (error) {
-      // Error processing PDF - handled by setting error state
+      // Error processing file
       setError(error.message);
       
-      // For demo purposes, show sample data if backend is not available
-      if (error.message.includes('Backend service') || error.message.includes('Network Error')) {
-        const sampleText = `Photosynthesis is the process by which plants use sunlight, water, and carbon dioxide to create oxygen and energy in the form of sugar. This process is essential for life on Earth.
+      // For demo purposes, show sample data if OCR fails
+      const sampleText = `Photosynthesis is the process by which plants use sunlight, water, and carbon dioxide to create oxygen and energy in the form of sugar. This process is essential for life on Earth.
 
 During photosynthesis, plants absorb light energy through chlorophyll in their leaves. This energy is used to convert carbon dioxide from the air and water from the soil into glucose and oxygen.
 
 The chemical equation for photosynthesis is:
 6CO₂ + 6H₂O + light energy → C₆H₁₂O₆ + 6O₂
 
-This process not only provides energy for the plant but also produces oxygen as a byproduct, which is released into the atmosphere. This oxygen is crucial for the survival of most life forms on Earth, including humans and animals.
-
-Photosynthesis occurs in two main stages:
-1. Light-dependent reactions (photo reactions)
-2. Light-independent reactions (Calvin cycle)
-
-The efficiency of photosynthesis can be affected by various factors including light intensity, carbon dioxide concentration, temperature, and water availability.`;
-        
-        setExtractedText(sampleText);
-        setError('Using sample data - backend not available');
-      }
+This process not only provides energy for the plant but also produces oxygen as a byproduct, which is released into the atmosphere.`;
+      
+      setExtractedText(sampleText);
+      setError('OCR processing failed - showing sample text');
     } finally {
       setIsProcessing(false);
       setUploadProgress(0);
+      setOcrProgress(null);
     }
   };
 
   const handleTextChange = (newText) => {
     setExtractedText(newText);
-    // Clear audio URL when text changes so user needs to regenerate
-    setAudioUrl('');
   };
 
-  const handleGenerateAudio = async () => {
+  const handlePlayAudio = async () => {
     if (!extractedText.trim()) {
-      alert('No text available to convert to audio');
+      alert('No text available to convert to speech');
       return;
     }
 
-    setIsGeneratingAudio(true);
-    setError('');
-
     try {
-      const result = await textbookAPI.textToSpeech(extractedText);
-      
-      if (result.success && result.audioUrl) {
-        setAudioUrl(result.audioUrl);
-      } else {
-        throw new Error(result.error || 'Failed to generate audio');
-      }
+      await ttsService.textToSpeech(extractedText);
     } catch (error) {
-      // Error generating audio - handled by setting error state
-      setError(`Failed to generate audio: ${error.message}`);
-    } finally {
-      setIsGeneratingAudio(false);
+      // Error generating speech
+      setError(`Failed to generate speech: ${error.message}`);
     }
+  };
+
+  const handlePauseAudio = () => {
+    ttsService.pause();
+  };
+
+  const handleResumeAudio = () => {
+    ttsService.resume();
+  };
+
+  const handleStopAudio = () => {
+    ttsService.stop();
   };
 
   return (
@@ -137,6 +138,7 @@ The efficiency of photosynthesis can be affected by various factors including li
             onFileUpload={handleFileUpload}
             isProcessing={isProcessing}
             uploadProgress={uploadProgress}
+            ocrProgress={ocrProgress}
           />
 
           <TextDisplay
@@ -145,10 +147,12 @@ The efficiency of photosynthesis can be affected by various factors including li
           />
 
           <AudioControls
-            audioUrl={audioUrl}
-            isGenerating={isGeneratingAudio}
-            onGenerateAudio={handleGenerateAudio}
             extractedText={extractedText}
+            onPlayAudio={handlePlayAudio}
+            onPauseAudio={handlePauseAudio}
+            onResumeAudio={handleResumeAudio}
+            onStopAudio={handleStopAudio}
+            ttsService={ttsService}
           />
         </Container>
       </div>

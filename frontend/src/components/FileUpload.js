@@ -56,23 +56,24 @@ const ProgressFill = styled.div`
   width: ${({ progress }) => progress}%;
 `;
 
-const FileUpload = ({ onFileUpload, isProcessing, uploadProgress }) => {
+const FileUpload = ({ onFileUpload, isProcessing, uploadProgress, ocrProgress }) => {
   const [selectedFile, setSelectedFile] = useState(null);
 
   const onDrop = useCallback((acceptedFiles) => {
     const file = acceptedFiles[0];
-    if (file && file.type === 'application/pdf') {
+    if (file && (file.type === 'application/pdf' || file.type.startsWith('image/'))) {
       setSelectedFile(file);
       onFileUpload(file);
     } else {
-      alert('Please upload a PDF file');
+      alert('Please upload a PDF or image file');
     }
   }, [onFileUpload]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
-      'application/pdf': ['.pdf']
+      'application/pdf': ['.pdf'],
+      'image/*': ['.png', '.jpg', '.jpeg', '.gif', '.bmp']
     },
     multiple: false,
     disabled: isProcessing
@@ -98,9 +99,17 @@ const FileUpload = ({ onFileUpload, isProcessing, uploadProgress }) => {
         {isProcessing ? (
           <Flex direction="column" align="center" gap="1rem">
             <LoadingSpinner size="48px" />
-            <Text weight="medium">Processing your PDF...</Text>
+            <Text weight="medium">
+              {ocrProgress?.stage === 'ocr' 
+                ? `Processing page ${ocrProgress.page}/${ocrProgress.totalPages}...`
+                : 'Processing your file...'
+              }
+            </Text>
             <Text size="sm" color="gray">
-              This may take a few minutes for large files
+              {ocrProgress?.stage === 'ocr'
+                ? 'Extracting text using OCR...'
+                : 'This may take a few minutes for large files'
+              }
             </Text>
           </Flex>
         ) : (
@@ -111,13 +120,13 @@ const FileUpload = ({ onFileUpload, isProcessing, uploadProgress }) => {
             
             <Text size="lg" weight="medium" noMargin>
               {isDragActive
-                ? 'Drop your PDF here'
-                : 'Drop your PDF here or click to browse'
+                ? 'Drop your file here'
+                : 'Drop your PDF or image here or click to browse'
               }
             </Text>
             
             <Text size="sm" color="gray" style={{ marginTop: '0.5rem' }}>
-              Supports PDF files up to 50MB
+              Supports PDF files and images (PNG, JPG, etc.) up to 50MB
             </Text>
           </>
         )}
