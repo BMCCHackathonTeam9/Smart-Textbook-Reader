@@ -10,47 +10,113 @@ class OCRService {
   constructor() {
     this.worker = null;
     this.isInitialized = false;
+    this.initializationAttempts = 0;
+    this.maxAttempts = 3;
   }
 
   async initialize() {
     if (this.isInitialized) return;
 
+    this.initializationAttempts++;
+    console.log(`Tesseract initialization attempt ${this.initializationAttempts}/${this.maxAttempts}`);
+
     try {
+      // Create worker with more explicit configuration
       console.log('Creating Tesseract.js worker...');
+      
       this.worker = await createWorker('eng', 1, {
-        logger: m => console.log('Tesseract init:', m)
+        logger: m => {
+          console.log('Tesseract init:', m.status, m.progress);
+        },
+        // Add explicit worker configuration
+        workerPath: `https://unpkg.com/tesseract.js@5.0.4/dist/worker.min.js`,
+        langPath: `https://tessdata.projectnaptha.com/4.0.0`,
+        corePath: `https://unpkg.com/tesseract.js-core@5.0.0/tesseract-core.wasm.js`
       });
+
+      // Set worker parameters for better performance
+      await this.worker.setParameters({
+        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?;:()-\'" ',
+        tessedit_pageseg_mode: '1', // Automatic page segmentation with OSD
+      });
+
       this.isInitialized = true;
       console.log('Tesseract.js worker initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize Tesseract.js:', error);
-      throw error;
+      console.error(`Tesseract initialization failed (attempt ${this.initializationAttempts}):`, error);
+      
+      if (this.initializationAttempts < this.maxAttempts) {
+        console.log('Retrying initialization...');
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+        return this.initialize();
+      } else {
+        throw new Error(`Failed to initialize Tesseract after ${this.maxAttempts} attempts`);
+      }
     }
   }
 
-  async extractTextFromImage(imageFile, onProgress) {
+  async reinitializeWorker() {
+    console.log('Reinitializing Tesseract worker...');
+    if (this.worker) {
+      try {
+        await this.worker.terminate();
+      } catch (e) {
+        console.warn('Error terminating worker:', e);
+      }
+    }
+    this.worker = null;
+    this.isInitialized = false;
+    this.initializationAttempts = 0;
+    await this.initialize();
+  }
+
+  async extractTextFromImage(imageFile, onProgress, attempt = 1) {
+    const maxAttempts = 2;
+    
     if (!this.isInitialized) {
       console.log('Initializing OCR worker...');
       await this.initialize();
     }
 
     try {
-      console.log('Starting OCR on image, size:', imageFile.size);
+      console.log(`Starting OCR on image (attempt ${attempt}), size:`, imageFile.size);
       
-      const result = await this.worker.recognize(imageFile, {
+      // Create a more aggressive timeout for individual OCR operations
+      const ocrPromise = this.worker.recognize(imageFile, {
         logger: (m) => {
-          console.log('Tesseract progress:', m);
+          console.log('Tesseract progress:', m.status, m.progress);
           if (onProgress && m.status === 'recognizing text') {
             onProgress(Math.round(m.progress * 100));
           }
         }
       });
 
+      // Shorter timeout - if it takes more than 15 seconds, something is wrong
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('OCR operation timeout')), 15000)
+      );
+
+      const result = await Promise.race([ocrPromise, timeoutPromise]);
+
       console.log('OCR completed, extracted text length:', result.data.text.length);
       return result.data.text;
+      
     } catch (error) {
-      console.error('OCR Error:', error);
-      throw new Error('Failed to extract text from image: ' + error.message);
+      console.error(`OCR Error (attempt ${attempt}):`, error);
+      
+      if (attempt < maxAttempts && (error.message.includes('timeout') || error.message.includes('worker'))) {
+        console.log('OCR failed, reinitializing worker and retrying...');
+        try {
+          await this.reinitializeWorker();
+          return await this.extractTextFromImage(imageFile, onProgress, attempt + 1);
+        } catch (reinitError) {
+          console.error('Worker reinitialize failed:', reinitError);
+        }
+      }
+      
+      // If all attempts failed, return a placeholder
+      console.warn('All OCR attempts failed, returning placeholder text');
+      return `[OCR failed for this image after ${attempt} attempts. Error: ${error.message}]`;
     }
   }
 
@@ -76,13 +142,8 @@ class OCRService {
         try {
           console.log(`Starting OCR on page ${i + 1}/${images.length}`);
           
-          // Add timeout protection for OCR
-          const ocrPromise = this.extractTextFromImage(images[i]);
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error(`OCR timeout on page ${i + 1}`)), 30000)
-          );
-
-          const pageText = await Promise.race([ocrPromise, timeoutPromise]);
+          // Shorter timeout and better error handling
+          const pageText = await this.extractTextFromImage(images[i]);
           
           console.log(`Page ${i + 1} OCR completed, text length:`, pageText.length);
           fullText += `\n\n--- Page ${i + 1} ---\n${pageText}`;
