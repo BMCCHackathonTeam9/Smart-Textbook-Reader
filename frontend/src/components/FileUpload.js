@@ -2,7 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import styled from 'styled-components';
 import { FiUpload, FiFile } from 'react-icons/fi';
-import { Card, Button, Text, LoadingSpinner, Flex } from './common';
+import { Card, Text, LoadingSpinner, Flex } from './common';
 
 const DropzoneWrapper = styled.div`
   border: 3px dashed ${({ theme, isDragActive }) => 
