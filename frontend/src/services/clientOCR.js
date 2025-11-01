@@ -1,4 +1,3 @@
-import { createWorker } from 'tesseract.js';
 import * as pdfjsLib from 'pdfjs-dist';
 
 // Configure PDF.js worker using URL string (compatible with Create React App)
@@ -8,115 +7,50 @@ console.log('PDF.js worker configured:', pdfjsLib.GlobalWorkerOptions.workerSrc)
 
 class OCRService {
   constructor() {
-    this.worker = null;
-    this.isInitialized = false;
-    this.initializationAttempts = 0;
-    this.maxAttempts = 3;
+    // Use OCR.space free API (no account needed for basic usage)
+    this.apiKey = 'K87899142388957'; // Free public API key
+    this.apiUrl = 'https://api.ocr.space/parse/image';
   }
 
-  async initialize() {
-    if (this.isInitialized) return;
-
-    this.initializationAttempts++;
-    console.log(`Tesseract initialization attempt ${this.initializationAttempts}/${this.maxAttempts}`);
-
+  async extractTextFromImage(imageFile, onProgress) {
     try {
-      // Create worker with more explicit configuration
-      console.log('Creating Tesseract.js worker...');
+      console.log('Starting OCR via OCR.space API, size:', imageFile.size);
       
-      this.worker = await createWorker('eng', 1, {
-        logger: m => {
-          console.log('Tesseract init:', m.status, m.progress);
-        },
-        // Add explicit worker configuration
-        workerPath: `https://unpkg.com/tesseract.js@5.0.4/dist/worker.min.js`,
-        langPath: `https://tessdata.projectnaptha.com/4.0.0`,
-        corePath: `https://unpkg.com/tesseract.js-core@5.0.0/tesseract-core.wasm.js`
+      if (onProgress) onProgress(10);
+
+      const formData = new FormData();
+      formData.append('file', imageFile);
+      formData.append('apikey', this.apiKey);
+      formData.append('language', 'eng');
+      formData.append('isOverlayRequired', 'false');
+      formData.append('detectOrientation', 'true');
+      formData.append('scale', 'true');
+      formData.append('OCREngine', '2'); // Use newer engine
+
+      if (onProgress) onProgress(30);
+
+      const response = await fetch(this.apiUrl, {
+        method: 'POST',
+        body: formData
       });
 
-      // Set worker parameters for better performance
-      await this.worker.setParameters({
-        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?;:()-\'" ',
-        tessedit_pageseg_mode: '1', // Automatic page segmentation with OSD
-      });
+      if (onProgress) onProgress(70);
 
-      this.isInitialized = true;
-      console.log('Tesseract.js worker initialized successfully');
+      const result = await response.json();
+
+      if (onProgress) onProgress(100);
+
+      if (result.IsErroredOnProcessing) {
+        throw new Error(result.ErrorMessage || 'OCR processing failed');
+      }
+
+      const text = result.ParsedResults?.[0]?.ParsedText || '';
+      console.log('OCR completed, extracted text length:', text.length);
+      
+      return text;
     } catch (error) {
-      console.error(`Tesseract initialization failed (attempt ${this.initializationAttempts}):`, error);
-      
-      if (this.initializationAttempts < this.maxAttempts) {
-        console.log('Retrying initialization...');
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
-        return this.initialize();
-      } else {
-        throw new Error(`Failed to initialize Tesseract after ${this.maxAttempts} attempts`);
-      }
-    }
-  }
-
-  async reinitializeWorker() {
-    console.log('Reinitializing Tesseract worker...');
-    if (this.worker) {
-      try {
-        await this.worker.terminate();
-      } catch (e) {
-        console.warn('Error terminating worker:', e);
-      }
-    }
-    this.worker = null;
-    this.isInitialized = false;
-    this.initializationAttempts = 0;
-    await this.initialize();
-  }
-
-  async extractTextFromImage(imageFile, onProgress, attempt = 1) {
-    const maxAttempts = 2;
-    
-    if (!this.isInitialized) {
-      console.log('Initializing OCR worker...');
-      await this.initialize();
-    }
-
-    try {
-      console.log(`Starting OCR on image (attempt ${attempt}), size:`, imageFile.size);
-      
-      // Create a more aggressive timeout for individual OCR operations
-      const ocrPromise = this.worker.recognize(imageFile, {
-        logger: (m) => {
-          console.log('Tesseract progress:', m.status, m.progress);
-          if (onProgress && m.status === 'recognizing text') {
-            onProgress(Math.round(m.progress * 100));
-          }
-        }
-      });
-
-      // Shorter timeout - if it takes more than 15 seconds, something is wrong
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('OCR operation timeout')), 15000)
-      );
-
-      const result = await Promise.race([ocrPromise, timeoutPromise]);
-
-      console.log('OCR completed, extracted text length:', result.data.text.length);
-      return result.data.text;
-      
-    } catch (error) {
-      console.error(`OCR Error (attempt ${attempt}):`, error);
-      
-      if (attempt < maxAttempts && (error.message.includes('timeout') || error.message.includes('worker'))) {
-        console.log('OCR failed, reinitializing worker and retrying...');
-        try {
-          await this.reinitializeWorker();
-          return await this.extractTextFromImage(imageFile, onProgress, attempt + 1);
-        } catch (reinitError) {
-          console.error('Worker reinitialize failed:', reinitError);
-        }
-      }
-      
-      // If all attempts failed, return a placeholder
-      console.warn('All OCR attempts failed, returning placeholder text');
-      return `[OCR failed for this image after ${attempt} attempts. Error: ${error.message}]`;
+      console.error('OCR Error:', error);
+      throw new Error('Failed to extract text from image: ' + error.message);
     }
   }
 
