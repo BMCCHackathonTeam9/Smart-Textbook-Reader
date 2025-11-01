@@ -16,9 +16,12 @@ class OCRService {
     if (this.isInitialized) return;
 
     try {
-      this.worker = await createWorker('eng');
+      console.log('Creating Tesseract.js worker...');
+      this.worker = await createWorker('eng', 1, {
+        logger: m => console.log('Tesseract init:', m)
+      });
       this.isInitialized = true;
-      console.log('Tesseract.js worker initialized');
+      console.log('Tesseract.js worker initialized successfully');
     } catch (error) {
       console.error('Failed to initialize Tesseract.js:', error);
       throw error;
@@ -27,30 +30,38 @@ class OCRService {
 
   async extractTextFromImage(imageFile, onProgress) {
     if (!this.isInitialized) {
+      console.log('Initializing OCR worker...');
       await this.initialize();
     }
 
     try {
+      console.log('Starting OCR on image, size:', imageFile.size);
+      
       const result = await this.worker.recognize(imageFile, {
         logger: (m) => {
+          console.log('Tesseract progress:', m);
           if (onProgress && m.status === 'recognizing text') {
             onProgress(Math.round(m.progress * 100));
           }
         }
       });
 
+      console.log('OCR completed, extracted text length:', result.data.text.length);
       return result.data.text;
     } catch (error) {
       console.error('OCR Error:', error);
-      throw new Error('Failed to extract text from image');
+      throw new Error('Failed to extract text from image: ' + error.message);
     }
   }
 
   async extractTextFromPDF(pdfFile, onProgress) {
     try {
       // First try the normal PDF processing
+      console.log('Starting PDF OCR process...');
       const images = await this.pdfToImages(pdfFile, onProgress);
       let fullText = '';
+      
+      console.log(`Processing ${images.length} images with OCR...`);
       
       for (let i = 0; i < images.length; i++) {
         if (onProgress) {
@@ -63,11 +74,22 @@ class OCRService {
         }
 
         try {
-          const pageText = await this.extractTextFromImage(images[i]);
+          console.log(`Starting OCR on page ${i + 1}/${images.length}`);
+          
+          // Add timeout protection for OCR
+          const ocrPromise = this.extractTextFromImage(images[i]);
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error(`OCR timeout on page ${i + 1}`)), 30000)
+          );
+
+          const pageText = await Promise.race([ocrPromise, timeoutPromise]);
+          
+          console.log(`Page ${i + 1} OCR completed, text length:`, pageText.length);
           fullText += `\n\n--- Page ${i + 1} ---\n${pageText}`;
+          
         } catch (error) {
           console.error(`Error processing page ${i + 1}:`, error);
-          fullText += `\n\n--- Page ${i + 1} ---\n[Error extracting text from this page]`;
+          fullText += `\n\n--- Page ${i + 1} ---\n[Error extracting text from this page: ${error.message}]`;
         }
       }
 
@@ -80,6 +102,7 @@ class OCRService {
         });
       }
 
+      console.log('PDF OCR completed, total text length:', fullText.length);
       return fullText.trim();
       
     } catch (error) {
