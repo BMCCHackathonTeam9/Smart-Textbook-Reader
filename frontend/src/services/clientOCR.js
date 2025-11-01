@@ -25,13 +25,22 @@ class OCRService {
       if (onProgress) onProgress(10);
 
       const formData = new FormData();
-      formData.append('file', imageFile);
+      
+      // Convert blob to file with proper name and type if needed
+      let fileToUpload = imageFile;
+      if (imageFile instanceof Blob && !(imageFile instanceof File)) {
+        // Create a proper File object from Blob with extension
+        fileToUpload = new File([imageFile], 'page.jpg', { type: 'image/jpeg' });
+      }
+      
+      formData.append('file', fileToUpload);
       formData.append('apikey', this.apiKey);
       formData.append('language', 'eng');
       formData.append('isOverlayRequired', 'false');
       formData.append('detectOrientation', 'true');
       formData.append('scale', 'true');
       formData.append('OCREngine', '2'); // Use newer engine
+      formData.append('filetype', 'JPG'); // Explicitly specify file type
 
       if (onProgress) onProgress(30);
 
