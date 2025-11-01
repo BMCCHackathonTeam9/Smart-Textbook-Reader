@@ -1,26 +1,26 @@
 import { createWorker } from 'tesseract.js';
-import * as pdfjsLib from 'pdfjs-dist';
 
-// Configure PDF.js worker with multiple fallbacks
-const configureWorker = () => {
-  const workerSources = [
-    // Try local worker first (for better reliability)
-    `${window.location.origin}/static/js/pdf.worker.min.mjs`,
-    // Fallback to CDNs
-    `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`,
-    `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`,
-    `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`
-  ];
+// Use dynamic import for PDF.js to avoid worker issues
+let pdfjsLib = null;
 
-  // Set the first available worker source
-  pdfjsLib.GlobalWorkerOptions.workerSrc = workerSources[0];
-  console.log('PDF.js worker configured:', pdfjsLib.GlobalWorkerOptions.workerSrc);
+const initializePDFJS = async () => {
+  if (!pdfjsLib) {
+    try {
+      // Dynamic import to avoid initial loading issues
+      pdfjsLib = await import('pdfjs-dist');
+      
+      // Don't use a worker at all - use the main thread
+      pdfjsLib.GlobalWorkerOptions.workerSrc = false;
+      
+      console.log('PDF.js initialized without worker');
+      return true;
+    } catch (error) {
+      console.error('Failed to initialize PDF.js:', error);
+      return false;
+    }
+  }
+  return true;
 };
-
-// Configure worker when module loads
-if (typeof window !== 'undefined') {
-  configureWorker();
-}
 
 class OCRService {
   constructor() {
@@ -112,6 +112,12 @@ class OCRService {
 
   async pdfToImages(pdfFile, onProgress) {
     try {
+      // Initialize PDF.js
+      const pdfjsInitialized = await initializePDFJS();
+      if (!pdfjsInitialized) {
+        throw new Error('PDF.js failed to initialize');
+      }
+
       if (onProgress) {
         onProgress({
           stage: 'converting',
@@ -124,34 +130,17 @@ class OCRService {
       console.log('Converting PDF to images...');
       const arrayBuffer = await pdfFile.arrayBuffer();
       
-      // Simplified PDF.js configuration that's more likely to work
-      const loadingTask = pdfjsLib.getDocument({
+      // Simple PDF.js configuration without worker complications
+      const pdf = await pdfjsLib.getDocument({
         data: arrayBuffer,
-        verbosity: 0,
-        // Disable problematic features
-        isEvalSupported: false,
-        disableFontFace: true,
-        useWorkerFetch: false,
-        disableAutoFetch: true,
-        disableStream: true,
-        disableRange: true,
-        // Add these for better compatibility
-        standardFontDataUrl: null,
-        cMapPacked: true
-      });
+        verbosity: 0
+      }).promise;
 
-      // Shorter timeout to fail faster
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('PDF loading timeout - try converting to images first')), 10000)
-      );
-
-      const pdf = await Promise.race([loadingTask.promise, timeoutPromise]);
       const images = [];
-
       console.log(`PDF has ${pdf.numPages} pages`);
       
-      // Limit to first 2 pages to minimize issues
-      const maxPages = Math.min(pdf.numPages, 2);
+      // Process all pages
+      const maxPages = pdf.numPages;
 
       for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
         if (onProgress) {
@@ -167,29 +156,23 @@ class OCRService {
           console.log(`Processing page ${pageNum}/${maxPages}...`);
           const page = await pdf.getPage(pageNum);
           
-          // Use smaller scale to reduce memory usage and processing time
-          const viewport = page.getViewport({ scale: 1.0 });
+          // Use reasonable scale
+          const viewport = page.getViewport({ scale: 1.5 });
           
           const canvas = document.createElement('canvas');
           const context = canvas.getContext('2d');
           canvas.height = viewport.height;
           canvas.width = viewport.width;
 
-          // Shorter timeout for page rendering
-          const renderPromise = page.render({
+          // Render page without timeout complications
+          await page.render({
             canvasContext: context,
             viewport: viewport
           }).promise;
 
-          const pageTimeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error(`Page ${pageNum} timeout`)), 5000)
-          );
-
-          await Promise.race([renderPromise, pageTimeoutPromise]);
-
-          // Convert to JPEG with lower quality for faster processing
+          // Convert to JPEG for efficiency
           const blob = await new Promise(resolve => {
-            canvas.toBlob(resolve, 'image/jpeg', 0.6);
+            canvas.toBlob(resolve, 'image/jpeg', 0.8);
           });
 
           if (blob) {
@@ -199,13 +182,13 @@ class OCRService {
           
         } catch (error) {
           console.error(`Error converting page ${pageNum}:`, error);
-          // Skip failed pages
+          // Continue with other pages
           continue;
         }
       }
 
       if (images.length === 0) {
-        throw new Error('No pages could be converted. Try uploading page screenshots as images instead.');
+        throw new Error('No pages could be converted to images');
       }
 
       console.log(`Successfully converted ${images.length} pages to images`);
@@ -213,15 +196,7 @@ class OCRService {
       
     } catch (error) {
       console.error('PDF to images conversion error:', error);
-      
-      // Provide more specific error messages
-      if (error.message.includes('timeout')) {
-        throw new Error('PDF processing timed out. Please try uploading individual page screenshots as images instead.');
-      } else if (error.message.includes('worker')) {
-        throw new Error('PDF worker failed to load. Please try uploading page screenshots as images instead.');
-      } else {
-        throw new Error('PDF processing failed. Please try uploading page screenshots as images instead.');
-      }
+      throw new Error('PDF processing failed: ' + error.message);
     }
   }
 
