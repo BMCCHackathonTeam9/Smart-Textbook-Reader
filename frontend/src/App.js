@@ -43,40 +43,66 @@ function App() {
     setOcrProgress(null);
 
     try {
+      console.log('Processing file:', file.name, file.type);
+      
       if (file.type === 'application/pdf') {
         // Handle PDF files
+        console.log('Starting PDF processing...');
         const text = await ocrService.extractTextFromPDF(file, (progress) => {
+          console.log('Progress update:', progress);
           setOcrProgress(progress);
           if (progress.stage === 'ocr') {
             setUploadProgress(progress.progress);
+          } else if (progress.stage === 'converting') {
+            setUploadProgress(Math.round(progress.progress * 0.3)); // PDF conversion is 30% of total
+          } else if (progress.stage === 'complete') {
+            setUploadProgress(100);
           }
         });
+        
+        if (!text || text.trim().length === 0) {
+          throw new Error('No text could be extracted from this PDF');
+        }
+        
         setExtractedText(text);
+        console.log('PDF processing completed successfully');
+        
       } else if (file.type.startsWith('image/')) {
         // Handle image files
+        console.log('Starting image processing...');
         const text = await ocrService.extractTextFromImage(file, (progress) => {
           setUploadProgress(progress);
         });
+        
+        if (!text || text.trim().length === 0) {
+          throw new Error('No text could be extracted from this image');
+        }
+        
         setExtractedText(text);
+        console.log('Image processing completed successfully');
+        
       } else {
-        throw new Error('Please upload a PDF or image file');
+        throw new Error('Please upload a PDF or image file (PNG, JPG, etc.)');
       }
     } catch (error) {
-      // Error processing file
+      console.error('File processing error:', error);
       setError(error.message);
       
       // For demo purposes, show sample data if OCR fails
-      const sampleText = `Photosynthesis is the process by which plants use sunlight, water, and carbon dioxide to create oxygen and energy in the form of sugar. This process is essential for life on Earth.
+      const sampleText = `Sample Text (OCR Failed)
+
+Photosynthesis is the process by which plants use sunlight, water, and carbon dioxide to create oxygen and energy in the form of sugar. This process is essential for life on Earth.
 
 During photosynthesis, plants absorb light energy through chlorophyll in their leaves. This energy is used to convert carbon dioxide from the air and water from the soil into glucose and oxygen.
 
 The chemical equation for photosynthesis is:
 6CO₂ + 6H₂O + light energy → C₆H₁₂O₆ + 6O₂
 
-This process not only provides energy for the plant but also produces oxygen as a byproduct, which is released into the atmosphere.`;
+This process not only provides energy for the plant but also produces oxygen as a byproduct, which is released into the atmosphere.
+
+Note: This is sample text shown because OCR processing failed. Error: ${error.message}`;
       
       setExtractedText(sampleText);
-      setError('OCR processing failed - showing sample text');
     } finally {
       setIsProcessing(false);
       setUploadProgress(0);

@@ -1,4 +1,8 @@
 import { createWorker } from 'tesseract.js';
+import * as pdfjsLib from 'pdfjs-dist';
+
+// Configure PDF.js worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 class OCRService {
   constructor() {
@@ -43,7 +47,7 @@ class OCRService {
   async extractTextFromPDF(pdfFile, onProgress) {
     try {
       // Convert PDF to images first
-      const images = await this.pdfToImages(pdfFile);
+      const images = await this.pdfToImages(pdfFile, onProgress);
       let fullText = '';
       
       for (let i = 0; i < images.length; i++) {
@@ -52,52 +56,101 @@ class OCRService {
             stage: 'ocr',
             page: i + 1,
             totalPages: images.length,
-            progress: Math.round(((i + 1) / images.length) * 100)
+            progress: Math.round(((i) / images.length) * 100)
           });
         }
 
-        const pageText = await this.extractTextFromImage(images[i]);
-        fullText += `\n\n--- Page ${i + 1} ---\n${pageText}`;
+        try {
+          const pageText = await this.extractTextFromImage(images[i]);
+          fullText += `\n\n--- Page ${i + 1} ---\n${pageText}`;
+        } catch (error) {
+          console.error(`Error processing page ${i + 1}:`, error);
+          fullText += `\n\n--- Page ${i + 1} ---\n[Error extracting text from this page]`;
+        }
+      }
+
+      if (onProgress) {
+        onProgress({
+          stage: 'complete',
+          page: images.length,
+          totalPages: images.length,
+          progress: 100
+        });
       }
 
       return fullText.trim();
     } catch (error) {
       console.error('PDF OCR Error:', error);
-      throw new Error('Failed to extract text from PDF');
+      throw new Error('Failed to extract text from PDF: ' + error.message);
     }
   }
 
-  async pdfToImages(pdfFile) {
-    // We'll use PDF.js for this
-    const pdfjsLib = await import('pdfjs-dist/webpack');
-    
-    const arrayBuffer = await pdfFile.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
-    const images = [];
+  async pdfToImages(pdfFile, onProgress) {
+    try {
+      if (onProgress) {
+        onProgress({
+          stage: 'converting',
+          page: 0,
+          totalPages: 0,
+          progress: 0
+        });
+      }
 
-    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-      const page = await pdf.getPage(pageNum);
-      const viewport = page.getViewport({ scale: 2 });
-      
-      const canvas = document.createElement('canvas');
-      const context = canvas.getContext('2d');
-      canvas.height = viewport.height;
-      canvas.width = viewport.width;
+      const arrayBuffer = await pdfFile.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+      const images = [];
 
-      await page.render({
-        canvasContext: context,
-        viewport: viewport
-      }).promise;
+      console.log(`PDF has ${pdf.numPages} pages`);
 
-      // Convert canvas to blob
-      const blob = await new Promise(resolve => {
-        canvas.toBlob(resolve, 'image/png');
-      });
+      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+        if (onProgress) {
+          onProgress({
+            stage: 'converting',
+            page: pageNum,
+            totalPages: pdf.numPages,
+            progress: Math.round(((pageNum - 1) / pdf.numPages) * 100)
+          });
+        }
 
-      images.push(blob);
+        try {
+          const page = await pdf.getPage(pageNum);
+          const viewport = page.getViewport({ scale: 2 });
+          
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+          canvas.height = viewport.height;
+          canvas.width = viewport.width;
+
+          await page.render({
+            canvasContext: context,
+            viewport: viewport
+          }).promise;
+
+          // Convert canvas to blob
+          const blob = await new Promise(resolve => {
+            canvas.toBlob(resolve, 'image/png');
+          });
+
+          images.push(blob);
+        } catch (error) {
+          console.error(`Error converting page ${pageNum}:`, error);
+          // Create a placeholder for failed pages
+          const canvas = document.createElement('canvas');
+          canvas.width = 100;
+          canvas.height = 100;
+          const blob = await new Promise(resolve => {
+            canvas.toBlob(resolve, 'image/png');
+          });
+          images.push(blob);
+        }
+      }
+
+      console.log(`Converted ${images.length} pages to images`);
+      return images;
+    } catch (error) {
+      console.error('PDF to images conversion error:', error);
+      throw new Error('Failed to convert PDF to images: ' + error.message);
     }
-
-    return images;
   }
 
   async cleanup() {
@@ -114,6 +167,7 @@ class TTSService {
   constructor() {
     this.synthesis = window.speechSynthesis;
     this.voices = [];
+    this.currentUtterance = null;
     this.loadVoices();
   }
 
@@ -138,25 +192,72 @@ class TTSService {
       // Stop any current speech
       this.synthesis.cancel();
 
-      const utterance = new SpeechSynthesisUtterance(text);
+      // Split long text into chunks to avoid browser limits
+      const maxLength = 200; // Most browsers have character limits
+      const chunks = this.splitTextIntoChunks(text, maxLength);
       
-      // Set voice options
-      const voice = this.voices.find(v => v.lang.startsWith('en')) || this.voices[0];
-      if (voice) utterance.voice = voice;
-      
-      utterance.rate = options.rate || 1;
-      utterance.pitch = options.pitch || 1;
-      utterance.volume = options.volume || 1;
-
-      utterance.onend = () => resolve();
-      utterance.onerror = (error) => reject(error);
-
-      this.synthesis.speak(utterance);
+      this.speakChunks(chunks, options, resolve, reject);
     });
+  }
+
+  splitTextIntoChunks(text, maxLength) {
+    const sentences = text.split(/[.!?]+/);
+    const chunks = [];
+    let currentChunk = '';
+
+    for (const sentence of sentences) {
+      if (currentChunk.length + sentence.length > maxLength) {
+        if (currentChunk.trim()) {
+          chunks.push(currentChunk.trim());
+        }
+        currentChunk = sentence;
+      } else {
+        currentChunk += sentence + '.';
+      }
+    }
+
+    if (currentChunk.trim()) {
+      chunks.push(currentChunk.trim());
+    }
+
+    return chunks;
+  }
+
+  speakChunks(chunks, options, resolve, reject, index = 0) {
+    if (index >= chunks.length) {
+      resolve();
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(chunks[index]);
+    this.currentUtterance = utterance;
+    
+    // Set voice options
+    const voice = this.voices.find(v => v.lang.startsWith('en')) || this.voices[0];
+    if (voice) utterance.voice = voice;
+    
+    utterance.rate = options.rate || 0.9;
+    utterance.pitch = options.pitch || 1;
+    utterance.volume = options.volume || 1;
+
+    utterance.onend = () => {
+      // Speak next chunk
+      setTimeout(() => {
+        this.speakChunks(chunks, options, resolve, reject, index + 1);
+      }, 100);
+    };
+
+    utterance.onerror = (error) => {
+      console.error('Speech error:', error);
+      reject(error);
+    };
+
+    this.synthesis.speak(utterance);
   }
 
   stop() {
     this.synthesis.cancel();
+    this.currentUtterance = null;
   }
 
   pause() {
@@ -168,7 +269,7 @@ class TTSService {
   }
 
   get isPlaying() {
-    return this.synthesis.speaking;
+    return this.synthesis.speaking && !this.synthesis.paused;
   }
 
   get isPaused() {
