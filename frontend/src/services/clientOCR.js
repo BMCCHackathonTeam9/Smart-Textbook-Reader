@@ -12,6 +12,12 @@ class OCRService {
     this.apiUrl = 'https://api.ocr.space/parse/image';
   }
 
+  async initialize() {
+    // No initialization needed for API-based approach
+    console.log('OCR service ready (using OCR.space API)');
+    return Promise.resolve();
+  }
+
   async extractTextFromImage(imageFile, onProgress) {
     try {
       console.log('Starting OCR via OCR.space API, size:', imageFile.size);
