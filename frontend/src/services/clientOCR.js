@@ -1,8 +1,8 @@
 import { createWorker } from 'tesseract.js';
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Configure PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+// Configure PDF.js worker with reliable CDN
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
 
 class OCRService {
   constructor() {
@@ -96,23 +96,42 @@ class OCRService {
         });
       }
 
+      console.log('Converting PDF to images...');
       const arrayBuffer = await pdfFile.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+      
+      // Add timeout protection for PDF loading
+      const loadingTask = pdfjsLib.getDocument({
+        data: arrayBuffer,
+        verbosity: 0, // Reduce console noise
+        isEvalSupported: false,
+        disableFontFace: true
+      });
+
+      // Set up timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('PDF loading timeout after 30 seconds')), 30000)
+      );
+
+      const pdf = await Promise.race([loadingTask.promise, timeoutPromise]);
       const images = [];
 
       console.log(`PDF has ${pdf.numPages} pages`);
+      
+      // Limit to first 5 pages to prevent timeout
+      const maxPages = Math.min(pdf.numPages, 5);
 
-      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
         if (onProgress) {
           onProgress({
             stage: 'converting',
             page: pageNum,
-            totalPages: pdf.numPages,
-            progress: Math.round(((pageNum - 1) / pdf.numPages) * 100)
+            totalPages: maxPages,
+            progress: Math.round(((pageNum - 1) / maxPages) * 100)
           });
         }
 
         try {
+          console.log(`Processing page ${pageNum}/${maxPages}...`);
           const page = await pdf.getPage(pageNum);
           const viewport = page.getViewport({ scale: 2 });
           
@@ -121,28 +140,35 @@ class OCRService {
           canvas.height = viewport.height;
           canvas.width = viewport.width;
 
-          await page.render({
+          // Add timeout for page rendering
+          const renderPromise = page.render({
             canvasContext: context,
             viewport: viewport
           }).promise;
 
+          const pageTimeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error(`Page ${pageNum} rendering timeout`)), 15000)
+          );
+
+          await Promise.race([renderPromise, pageTimeoutPromise]);
+
           // Convert canvas to blob
           const blob = await new Promise(resolve => {
-            canvas.toBlob(resolve, 'image/png');
+            canvas.toBlob(resolve, 'image/png', 0.8);
           });
 
           images.push(blob);
+          console.log(`Page ${pageNum} converted successfully`);
+          
         } catch (error) {
           console.error(`Error converting page ${pageNum}:`, error);
-          // Create a placeholder for failed pages
-          const canvas = document.createElement('canvas');
-          canvas.width = 100;
-          canvas.height = 100;
-          const blob = await new Promise(resolve => {
-            canvas.toBlob(resolve, 'image/png');
-          });
-          images.push(blob);
+          // Skip failed pages instead of creating placeholder
+          continue;
         }
+      }
+
+      if (images.length === 0) {
+        throw new Error('No pages could be converted to images');
       }
 
       console.log(`Converted ${images.length} pages to images`);
