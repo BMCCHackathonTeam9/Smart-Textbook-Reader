@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 
+  (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5000');
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -82,7 +83,9 @@ export const textbookAPI = {
 
   // Get audio file
   getAudioURL: (filename) => {
-    return `${API_BASE_URL}/api/audio/${filename}`;
+    const baseUrl = process.env.REACT_APP_API_URL || 
+      (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5000');
+    return `${baseUrl}/api/audio/${filename}`;
   },
 };
 
