@@ -22,9 +22,9 @@ function App() {
     const checkBackendHealth = async () => {
       try {
         await textbookAPI.healthCheck();
-        console.log('Backend is healthy');
+        // Backend is healthy - no action needed
       } catch (error) {
-        console.warn('Backend health check failed:', error.message);
+        // Backend health check failed
         setError('Backend service is not available. Please ensure the Python server is running.');
       }
     };
@@ -53,7 +53,7 @@ function App() {
         throw new Error(result.error || 'Failed to process PDF');
       }
     } catch (error) {
-      console.error('Error processing PDF:', error);
+      // Error processing PDF - handled by setting error state
       setError(error.message);
       
       // For demo purposes, show sample data if backend is not available
@@ -106,7 +106,7 @@ The efficiency of photosynthesis can be affected by various factors including li
         throw new Error(result.error || 'Failed to generate audio');
       }
     } catch (error) {
-      console.error('Error generating audio:', error);
+      // Error generating audio - handled by setting error state
       setError(`Failed to generate audio: ${error.message}`);
     } finally {
       setIsGeneratingAudio(false);

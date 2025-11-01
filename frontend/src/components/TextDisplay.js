@@ -33,7 +33,7 @@ const TextDisplay = ({ extractedText, onTextChange }) => {
       // You could add a toast notification here
       alert('Text copied to clipboard!');
     } catch (err) {
-      console.error('Failed to copy text:', err);
+      // Failed to copy text - show user-friendly error
       alert('Failed to copy text');
     }
   };

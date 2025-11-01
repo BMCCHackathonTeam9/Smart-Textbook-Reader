@@ -11,7 +11,7 @@ const api = axios.create({
 // Request interceptor
 api.interceptors.request.use(
   (config) => {
-    console.log(`Making ${config.method?.toUpperCase()} request to ${config.url}`);
+    // Request being made - could add analytics here
     return config;
   },
   (error) => {
@@ -25,7 +25,7 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
-    console.error('API Error:', error.response?.data || error.message);
+    // API Error - handled by calling components
     return Promise.reject(error);
   }
 );
