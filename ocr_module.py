@@ -1,4 +1,3 @@
-
 # ocr_module.py  (PDF + image support)
 
 import cv2
@@ -128,9 +127,16 @@ def extract_text_from_pdf(pdf_path, lang="eng"):
     full_text = []
 
     for i, page in enumerate(pages, start=1):
+        if i > 1:  # Skip prompt for first page
+            input(f"Press Enter to proceed to page {i}/{len(pages)}...")
         print(f"OCRing page {i}/{len(pages)}...")
         page_text = extract_text(page, lang=lang)
         full_text.append(page_text)
+
+        # Print the current page's text immediately
+        print(f"\n--- Page {i} Text ---")
+        print(page_text)
+        print(f"--- End of Page {i} ---\n")
 
     return "\n\n".join(full_text)
 
