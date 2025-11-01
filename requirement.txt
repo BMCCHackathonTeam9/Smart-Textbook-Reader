@@ -1,6 +1,12 @@
-streamlit
+# Python Backend Dependencies
+flask
+flask-cors
 pytesseract
 pillow
 gtts
 opencv-python-headless
 numpy
+pdf2image
+
+# For development (optional)
+python-dotenv
