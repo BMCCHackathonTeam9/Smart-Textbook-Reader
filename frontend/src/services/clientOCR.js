@@ -24,23 +24,30 @@ class OCRService {
       
       if (onProgress) onProgress(10);
 
-      const formData = new FormData();
-      
-      // Convert blob to file with proper name and type if needed
+      // Compress image if it's too large for the API (1MB limit on mobile)
       let fileToUpload = imageFile;
-      if (imageFile instanceof Blob && !(imageFile instanceof File)) {
-        // Create a proper File object from Blob with extension
-        fileToUpload = new File([imageFile], 'page.jpg', { type: 'image/jpeg' });
+      const maxSize = 900 * 1024; // 900KB to be safe
+      
+      if (imageFile.size > maxSize) {
+        console.log('Image too large, compressing...');
+        fileToUpload = await this.compressImage(imageFile, maxSize);
+        console.log('Compressed from', imageFile.size, 'to', fileToUpload.size);
       }
       
+      // Convert blob to file with proper name and type if needed
+      if (fileToUpload instanceof Blob && !(fileToUpload instanceof File)) {
+        fileToUpload = new File([fileToUpload], 'page.jpg', { type: 'image/jpeg' });
+      }
+
+      const formData = new FormData();
       formData.append('file', fileToUpload);
       formData.append('apikey', this.apiKey);
       formData.append('language', 'eng');
       formData.append('isOverlayRequired', 'false');
       formData.append('detectOrientation', 'true');
       formData.append('scale', 'true');
-      formData.append('OCREngine', '2'); // Use newer engine
-      formData.append('filetype', 'JPG'); // Explicitly specify file type
+      formData.append('OCREngine', '2');
+      formData.append('filetype', 'JPG');
 
       if (onProgress) onProgress(30);
 
@@ -67,6 +74,57 @@ class OCRService {
       console.error('OCR Error:', error);
       throw new Error('Failed to extract text from image: ' + error.message);
     }
+  }
+
+  async compressImage(imageFile, maxSize) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          
+          // Calculate new dimensions (reduce by half if too large)
+          const maxDimension = 2000;
+          if (width > maxDimension || height > maxDimension) {
+            if (width > height) {
+              height = (height / width) * maxDimension;
+              width = maxDimension;
+            } else {
+              width = (width / height) * maxDimension;
+              height = maxDimension;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          // Try different quality levels until file is small enough
+          let quality = 0.7;
+          const tryCompress = () => {
+            canvas.toBlob((blob) => {
+              if (blob.size <= maxSize || quality <= 0.3) {
+                resolve(blob);
+              } else {
+                quality -= 0.1;
+                tryCompress();
+              }
+            }, 'image/jpeg', quality);
+          };
+          
+          tryCompress();
+        };
+        img.onerror = reject;
+        img.src = e.target.result;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(imageFile);
+    });
   }
 
   async extractTextFromPDF(pdfFile, onProgress) {
