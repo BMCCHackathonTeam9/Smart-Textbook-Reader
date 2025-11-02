@@ -1,32 +1,49 @@
-# Smart Textbook Reader - React + Styled Components Setup
+# Smart Textbook Reader
 
-A modern web application that extracts text from PDF textbooks and converts it to speech using AI-powered OCR and TTS.
+A modern web application that extracts text from PDF textbooks and images using OCR and converts it to speech, running entirely in the browser.
 
 ## 🚀 Features
 
 - **📱 Modern React UI** with styled-components
-- **📄 PDF Text Extraction** using advanced OCR
-- **🔊 Text-to-Speech** conversion
-- **🎵 Audio Player** with full controls
-- **📱 Responsive Design** for all devices
-- **🎨 Beautiful Animations** and interactions
-- **♿ Accessibility Features** included
+- **📄 PDF & Image Processing** - Upload PDFs or images for text extraction
+- **🔍 Cloud OCR** - Uses OCR.space API for reliable text extraction
+- **🔊 Text-to-Speech** - Browser-native Web Speech API
+- **🎵 Audio Controls** - Play, pause, and control speech playback
+- **📱 Fully Responsive** - Works on desktop and mobile
+- **🎨 Beautiful Design** - Gradient themes and smooth animations
+- **♿ Accessible** - Built with accessibility in mind
+- **☁️ Deployed on Vercel** - No backend server needed
+
+## 🏗️ Architecture
+
+This is a **client-side React application** that:
+- Runs entirely in the browser (no backend server)
+- Uses OCR.space API for OCR processing
+- Uses Web Speech API for text-to-speech
+- Processes PDFs with PDF.js in the browser
+- Deploys as static files on Vercel
 
 ## 📁 Project Structure
 
 ```
 Smart-Textbook-Reader/
-├── frontend/                 # React frontend
-│   ├── public/              # Static files
+├── frontend/                 # React application
+│   ├── public/              # Static assets
 │   ├── src/
 │   │   ├── components/      # React components
-│   │   ├── styles/          # Theme and global styles
-│   │   └── services/        # API services
-│   └── package.json
-├── backend.py               # Flask API server
-├── ocr_module.py           # OCR functionality
-├── tts_module.py           # Text-to-speech (legacy)
-├── requirement.txt         # Python dependencies
+│   │   │   ├── FileUpload.js
+│   │   │   ├── TextDisplay.js
+│   │   │   ├── AudioControls.js
+│   │   │   └── common.js    # Reusable styled components
+│   │   ├── services/        # Client-side services
+│   │   │   └── clientOCR.js # OCR & TTS logic
+│   │   ├── styles/          # Theme system
+│   │   │   └── theme.js
+│   │   ├── App.js           # Main application
+│   │   └── index.js         # Entry point
+│   ├── package.json
+│   └── build/               # Production build output
+├── vercel.json              # Vercel deployment config
 └── README.md
 ```
 
@@ -34,207 +51,226 @@ Smart-Textbook-Reader/
 
 ### Prerequisites
 
-- **Python 3.8+**
 - **Node.js 16+** and npm
-- **Tesseract OCR** installed on your system
+- Modern web browser (Chrome, Firefox, Safari, Edge)
 
-#### Install Tesseract OCR:
-
-**macOS:**
-```bash
-brew install tesseract
-```
-
-**Ubuntu/Debian:**
-```bash
-sudo apt-get install tesseract-ocr
-```
-
-**Windows:**
-Download from: https://github.com/UB-Mannheim/tesseract/wiki
-
-### 1. Backend Setup
-
-```bash
-# Install Python dependencies
-pip install -r requirement.txt
-
-# Start the Flask backend server
-python backend.py
-```
-
-The backend will be available at: `http://localhost:5000`
-
-### 2. Frontend Setup
+### Installation
 
 ```bash
 # Navigate to frontend directory
 cd frontend
 
-# Install React dependencies
+# Install dependencies
 npm install
 
-# Start the React development server
+# Start development server
 npm start
 ```
 
-The frontend will be available at: `http://localhost:3000`
+The app will be available at `http://localhost:3000`
 
-## 🎯 Usage
+### Build for Production
 
-1. **Start both servers** (backend and frontend)
-2. **Open your browser** to `http://localhost:3000`
-3. **Upload a PDF** by dragging and dropping or clicking to browse
-4. **Wait for processing** - text extraction and audio generation
-5. **View extracted text** in the text display area
-6. **Play audio** using the built-in audio controls
-7. **Edit text** if needed and regenerate audio
-
-## 🎨 Styling with Styled Components
-
-The project uses styled-components for all styling. Key features:
-
-### Theme System
-- Consistent colors, typography, and spacing
-- Dark/light mode ready
-- Responsive breakpoints
-
-### Reusable Components
-- `Button`, `Card`, `Text`, `Heading`
-- `Flex`, `Grid` layout components
-- `LoadingSpinner`, `Input`, `TextArea`
-
-### Responsive Design
-- Mobile-first approach
-- Flexible grid system
-- Touch-friendly interactions
-
-## 🔧 Customization
-
-### Adding Figma Designs
-
-1. **Export from Figma:**
-   - Use Figma-to-React plugins
-   - Export assets to `frontend/src/assets/`
-   - Copy CSS properties
-
-2. **Update Components:**
-   - Modify existing styled components
-   - Add new component files
-   - Update theme variables
-
-3. **Preserve Functionality:**
-   - Keep existing component props
-   - Maintain accessibility features
-   - Test all interactions
-
-### Example: Custom Button Component
-
-```jsx
-import styled from 'styled-components';
-
-const CustomButton = styled.button`
-  background: ${({ theme }) => theme.colors.primary.gradient};
-  color: white;
-  border: none;
-  border-radius: ${({ theme }) => theme.borderRadius.full};
-  padding: ${({ theme }) => theme.spacing.md} ${({ theme }) => theme.spacing.xl};
-  font-weight: ${({ theme }) => theme.typography.fontWeight.medium};
-  cursor: pointer;
-  transition: all 0.3s ease;
-
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow: ${({ theme }) => theme.shadows.lg};
-  }
-
-  @media (max-width: ${({ theme }) => theme.breakpoints.md}) {
-    width: 100%;
-  }
-`;
-```
-
-### Updating Theme
-
-Edit `frontend/src/styles/theme.js`:
-
-```javascript
-export const theme = {
-  colors: {
-    primary: {
-      main: '#your-color',
-      gradient: 'linear-gradient(135deg, #color1 0%, #color2 100%)'
-    }
-    // ... more colors
-  }
-  // ... typography, spacing, etc.
-};
-```
-
-## 🚀 Production Build
-
-### Frontend
 ```bash
 cd frontend
 npm run build
 ```
 
-### Backend
-For production, use a WSGI server like Gunicorn:
+The production build will be in `frontend/build/`
 
-```bash
-pip install gunicorn
-gunicorn -w 4 -b 0.0.0.0:5000 backend:app
+## 🎯 Usage
+
+1. **Open the app** in your browser
+2. **Upload a file:**
+   - Drag and drop a PDF or image
+   - Or click to browse and select
+3. **Processing:**
+   - PDF pages are converted to images
+   - Images are sent to OCR.space API for text extraction
+   - Extracted text appears in the display area
+4. **Text-to-Speech:**
+   - Click "Play" to hear the text read aloud
+   - Use pause/resume controls as needed
+5. **Edit & Download:**
+   - Edit extracted text if needed
+   - Copy to clipboard or download as text file
+
+## 🎨 Styling with Styled Components
+
+### Theme System
+Located in `frontend/src/styles/theme.js`:
+- Consistent color palette with gradients
+- Typography system (Poppins font)
+- Spacing scale
+- Responsive breakpoints
+- Shadow and border-radius tokens
+
+### Reusable Components
+All in `frontend/src/components/common.js`:
+- `Button`, `Card`, `Text`, `Heading`
+- `Flex`, `Grid` for layouts
+- `LoadingSpinner`, `Input`, `TextArea`
+- Fully themeable and responsive
+
+### Example Component
+
+```jsx
+import styled from 'styled-components';
+import { Button, Card } from './components/common';
+
+const CustomCard = styled(Card)`
+  background: ${({ theme }) => theme.colors.primary.gradient};
+  transition: transform 0.3s ease;
+  
+  &:hover {
+    transform: translateY(-4px);
+  }
+`;
 ```
 
-## 🐛 Troubleshooting
+## 🔧 Technical Details
+
+### OCR Processing
+- **Library:** OCR.space API (free tier)
+- **Process:** 
+  1. PDF converted to images using PDF.js
+  2. Images compressed to JPEG format
+  3. Sent to OCR.space API
+  4. Text extracted and displayed
+
+### Text-to-Speech
+- **Library:** Web Speech API (browser native)
+- **Features:**
+  - No external dependencies
+  - Works offline after page load
+  - Automatic text chunking for long content
+  - Play/pause/resume controls
+
+### PDF Processing
+- **Library:** PDF.js
+- **Process:**
+  1. PDF loaded in browser memory
+  2. Each page rendered to canvas
+  3. Canvas converted to JPEG blob
+  4. Blobs sent for OCR processing
+
+## 🚀 Deployment
+
+### Vercel (Recommended)
+
+```bash
+# Install Vercel CLI
+npm i -g vercel
+
+# Deploy
+cd Smart-Textbook-Reader
+vercel --prod
+```
+
+**Configuration:**
+- Framework: Create React App
+- Build Command: `cd frontend && npm run build`
+- Output Directory: `frontend/build`
+- Root Directory: `./`
+
+### Manual Deployment
+
+```bash
+# Build the app
+cd frontend
+npm run build
+
+# Deploy the frontend/build folder to any static hosting:
+# - Netlify
+# - GitHub Pages
+# - AWS S3
+# - Firebase Hosting
+```
+
+## ⚙️ Configuration
+
+### OCR.space API
+Located in `frontend/src/services/clientOCR.js`:
+```javascript
+this.apiKey = 'K87899142388957'; // Free public key
+this.apiUrl = 'https://api.ocr.space/parse/image';
+```
+
+**Limitations:**
+- 1MB file size limit per request
+- Free tier rate limits apply
+- Mobile users may see smaller limits
+
+### Theme Customization
+Edit `frontend/src/styles/theme.js`:
+```javascript
+export const theme = {
+  colors: {
+    primary: {
+      main: '#667eea',
+      light: '#a8b9ff',
+      dark: '#4c51bf',
+      gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+    }
+  }
+};
+```
+
+## � Troubleshooting
 
 ### Common Issues
 
-1. **Backend not starting:**
-   - Check Python dependencies: `pip install -r requirement.txt`
-   - Verify Tesseract installation: `which tesseract`
+**PDF Upload Fails:**
+- Check console for errors
+- Try with smaller PDF (< 5 pages recommended)
+- Ensure PDF is not password-protected
 
-2. **Frontend not connecting:**
-   - Ensure backend is running on port 5000
-   - Check CORS configuration
-   - Verify proxy setting in `package.json`
+**OCR Not Working:**
+- Check internet connection (API requires connection)
+- OCR.space API may have rate limits
+- Try uploading as individual images instead
 
-3. **OCR not working:**
-   - Update Tesseract path in `ocr_module.py`
-   - Test with: `pytesseract.image_to_string(test_image)`
+**Text-to-Speech Not Working:**
+- Check browser compatibility (modern browsers required)
+- Ensure browser permissions allow audio
+- Some browsers require user interaction first
 
-4. **Styling issues:**
-   - Check browser console for errors
-   - Verify styled-components installation
-   - Test theme provider setup
+**Mobile Issues:**
+- File size limits may be stricter (1MB)
+- Compress images before uploading
+- Try fewer pages at a time
 
-### Development Tips
+## 📱 Browser Compatibility
 
-- Use React Developer Tools for debugging
-- Check Network tab for API calls
-- Enable Flask debug mode for backend errors
-- Use styled-components browser extension
-
-## 📚 API Endpoints
-
-- `GET /api/health` - Health check
-- `POST /api/process-pdf` - Upload PDF and extract text
-- `POST /api/text-to-speech` - Convert text to audio
-- `GET /api/audio/<filename>` - Serve audio files
+- ✅ Chrome 90+
+- ✅ Firefox 88+
+- ✅ Safari 14+
+- ✅ Edge 90+
+- ⚠️ IE 11 (not supported)
 
 ## 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+2. Create feature branch: `git checkout -b feature-name`
+3. Make changes and test thoroughly
+4. Commit: `git commit -m 'Add feature'`
+5. Push: `git push origin feature-name`
+6. Open Pull Request
 
 ## 📄 License
 
-This project is open source and available under the MIT License.
+MIT License - feel free to use this project for learning or production.
+
+## 🙏 Acknowledgments
+
+- OCR.space for free OCR API
+- PDF.js by Mozilla
+- Web Speech API
+- Vercel for hosting
+- Styled-components team
 
 ---
 
-**Happy coding!** 🎉 If you have any questions or need help, feel free to open an issue.
+**Built with ❤️ for BMCC Hackathon Team 9**
+
+For questions or issues, open a GitHub issue or contact the team.
